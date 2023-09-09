@@ -4,6 +4,8 @@
 //  MIT license, see LICENSE for more information
 // ********************************************************************************
 
+// https://adventofcode.com/2015
+
 const std = @import("std");
 const Writer = @import("Writer.zig");
 

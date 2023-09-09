@@ -384,6 +384,8 @@ const main_fmt =
     \\//  MIT license, see LICENSE for more information
     \\// ********************************************************************************
     \\
+    \\// https://adventofcode.com/{[year]}
+    \\
     \\const std = @import("std");
     \\const Writer = @import("Writer.zig");
     \\

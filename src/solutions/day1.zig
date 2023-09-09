@@ -43,8 +43,7 @@ pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
 ///   - ))) and )())()) both result in floor -3.
 ///
 /// To what floor do the instructions take Santa?
-fn part1(allocator: std.mem.Allocator) !i64 {
-    _ = allocator;
+fn part1(_: std.mem.Allocator) !i64 {
     var floor: i64 = 0;
     for (input) |dir| {
         floor += switch (dir) {
@@ -56,8 +55,25 @@ fn part1(allocator: std.mem.Allocator) !i64 {
     return floor;
 }
 
-/// PART 2 DESCRIPTION
-fn part2(allocator: std.mem.Allocator) ![]const u8 {
-    _ = allocator;
-    return "not implemented";
+/// Now, given the same instructions, find the position of the first character that causes him to
+/// enter the basement (floor -1). The first character in the instructions has position 1, the
+/// second character has position 2, and so on.
+///
+/// For example:
+///
+///   - ) causes him to enter the basement at character position 1.
+///   - ()()) causes him to enter the basement at character position 5.
+///
+/// What is the position of the character that causes Santa to first enter the basement?
+fn part2(_: std.mem.Allocator) !usize {
+    var floor: i64 = 0;
+    for (input, 0..) |dir, i| {
+        floor += switch (dir) {
+            '(' => 1,
+            ')' => -1,
+            else => 0,
+        };
+        if (floor < 0) return i + 1;
+    }
+    return 0;
 }
