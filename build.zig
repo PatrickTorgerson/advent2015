@@ -11,16 +11,16 @@ var repo_opt: []const u8 = "use -Drepo=[string] to populate this line";
 var copyright_opt: []const u8 = "use -Dcopyright=[string] to populate this line";
 
 pub fn build(b: *std.Build) void {
-    year_opt = b.option(i32, "year", "init: advent of Code event year");
-    repo_opt = b.option([]const u8, "repo", "init: repo link to include in banner comments") orelse repo_opt;
-    copyright_opt = b.option([]const u8, "copyright", "init: copyright to include in banner comments") orelse copyright_opt;
+    year_opt = b.option(i32, "year", "generate: advent of Code event year");
+    repo_opt = b.option([]const u8, "repo", "generate: repo link to include in banner comments") orelse repo_opt;
+    copyright_opt = b.option([]const u8, "copyright", "generate: copyright to include in banner comments") orelse copyright_opt;
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // -- directory init, see fn init()
-    const init_step = b.step("init", "Create initial solution files, use -Dyear=[int]");
-    init_step.makeFn = init;
+    // -- directory init, see fn generate()
+    const init_step = b.step("generate", "Generate initial solution files, use -Dyear=[int]");
+    init_step.makeFn = generate;
 
     // -- executable
     const exe = b.addExecutable(.{
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
 }
 
 /// Create initial solution files
-fn init(_: *std.Build.Step, _: *std.Progress.Node) !void {
+fn generate(_: *std.Build.Step, _: *std.Progress.Node) !void {
     if (year_opt) |year| {
         var cwd = std.fs.cwd();
         try cwd.makePath("src/solutions");
@@ -49,6 +49,9 @@ fn init(_: *std.Build.Step, _: *std.Progress.Node) !void {
         generateFile(cwd, ".gitignore", gitignore_fmt, .{}) catch {};
         generateFile(cwd, "LICENSE", license_fmt, .{
             .copyright = copyright_opt,
+        }) catch {};
+        generateFile(cwd, "README.md", readme_fmt, .{
+            .year = year,
         }) catch {};
         generateFile(cwd, "src/Writer.zig", writer_fmt, .{
             .repo = repo_opt,
@@ -146,6 +149,28 @@ const license_fmt =
     \\LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     \\OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     \\SOFTWARE.
+    \\
+;
+
+const readme_fmt =
+    \\# advent{[year]}
+    \\
+    \\Advent of code {[year]} solutions
+    \\ * build with `zig build`
+    \\ * run with `zig build run -- ARGS`
+    \\
+    \\to run a specific solution run `advent{[year]} DAY`, where `DAY` is an
+    \\integer between 1 and 25 inclusive.
+    \\
+    \\## project generation
+    \\
+    \\re-generate missing files, or generate files for another Advent of Code event with
+    \\`zig build generate -Dyear=YEAR -Drepo=LINK -Dcopyright=CPYRT`, all you need is the `build.zig` file.
+    \\ * where `YEAR` is the event year
+    \\ * where `LINK` is a repo link to include in banner comments
+    \\ * where `CPYRT` is a copyright notice to include in banner comments
+    \\
+    \\note, input files are not automatically populated
     \\
 ;
 
