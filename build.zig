@@ -9,11 +9,23 @@ const std = @import("std");
 var year_opt: ?i32 = null;
 var repo_opt: []const u8 = "use -Drepo=[string] to populate this line";
 var copyright_opt: []const u8 = "use -Dcopyright=[string] to populate this line";
+var exeprefix_opt: []const u8 = "advent";
+
+// vvv DO NOT TOUCH vvv
+var exename = "aoc2015";
+// ^^^ DO NOT TOUCH ^^^
 
 pub fn build(b: *std.Build) void {
     year_opt = b.option(i32, "year", "generate: advent of Code event year");
     repo_opt = b.option([]const u8, "repo", "generate: repo link to include in banner comments") orelse repo_opt;
     copyright_opt = b.option([]const u8, "copyright", "generate: copyright to include in banner comments") orelse copyright_opt;
+    exeprefix_opt = b.option([]const u8, "exeprefix", "generate: executable name prefix, <prefix><year>") orelse exeprefix_opt;
+
+    for (exeprefix_opt) |c|
+        if (std.ascii.isWhitespace(c)) {
+            std.debug.print("exeprefix must not have whitespace", .{});
+            return;
+        };
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -24,7 +36,7 @@ pub fn build(b: *std.Build) void {
 
     // -- executable
     const exe = b.addExecutable(.{
-        .name = "advent2015",
+        .name = exename,
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
@@ -46,6 +58,8 @@ fn generate(_: *std.Build.Step, _: *std.Progress.Node) !void {
         try cwd.makePath("src/solutions");
         try cwd.makePath("src/input");
 
+        setExeName(cwd, year) catch {};
+
         generateFile(cwd, ".gitignore", gitignore_fmt, .{}) catch {};
         generateFile(cwd, "LICENSE", license_fmt, .{
             .copyright = copyright_opt,
@@ -66,6 +80,7 @@ fn generate(_: *std.Build.Step, _: *std.Progress.Node) !void {
             .copyright = copyright_opt,
         }) catch {};
         generateFile(cwd, "src/main.zig", main_fmt, .{
+            .exename = exename,
             .repo = repo_opt,
             .copyright = copyright_opt,
             .year = year,
@@ -100,6 +115,55 @@ fn generateFile(cwd: std.fs.Dir, filename: []const u8, comptime fmt: []const u8,
     };
 }
 
+fn getExeName(buffer: []u8, year: i32) ![]const u8 {
+    var stream = std.io.fixedBufferStream(buffer);
+    var writer = stream.writer();
+    writer.print("{s}{}", .{ exeprefix_opt, year }) catch |err| {
+        std.debug.print("({s}): could not generate exe name\n", .{@errorName(err)});
+        return err;
+    };
+    return buffer[0..stream.pos];
+}
+
+fn setExeName(cwd: std.fs.Dir, year: i32) !void {
+    var buffer: [128]u8 = undefined;
+    const name = try getExeName(&buffer, year);
+    var thisfile = try cwd.openFile("build.zig", .{
+        .mode = .read_write,
+    });
+    defer thisfile.close();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var allocator = gpa.allocator();
+    const file_buffer = try thisfile.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(file_buffer);
+    var lines = std.mem.splitScalar(u8, file_buffer, '\n');
+
+    // find location of exename
+    const loc = lineloop: while (lines.next()) |line| {
+        var words = std.mem.splitScalar(u8, line, ' ');
+        while (words.next()) |word| {
+            if (word.len == 0) continue;
+            if (std.mem.eql(u8, word, "var") and
+                std.mem.eql(u8, words.next() orelse continue :lineloop, "exename") and
+                std.mem.eql(u8, words.next() orelse continue :lineloop, "="))
+            {
+                const start = (lines.index orelse 0) + (words.index orelse 0) - line.len;
+                const oldname = words.next() orelse "";
+                break :lineloop .{
+                    start,
+                    start + oldname.len - 3, // quote, semicolon, newline
+                };
+            }
+        }
+    } else .{ 0, 0 };
+    try thisfile.seekTo(0);
+    try thisfile.writeAll(file_buffer[0..loc[0]]);
+    try thisfile.writeAll(name);
+    try thisfile.writeAll(file_buffer[loc[1]..]);
+    try thisfile.setEndPos(try thisfile.getPos());
+}
+
 fn getSolutionFileName(buffer: []u8, day: usize) ![]const u8 {
     var stream = std.io.fixedBufferStream(buffer);
     var writer = stream.writer();
@@ -119,6 +183,9 @@ fn getInputFileName(buffer: []u8, day: usize) ![]const u8 {
     };
     return buffer[0..stream.pos];
 }
+
+//  ====== file formats ======
+// (do not remove this comment)
 
 const gitignore_fmt =
     \\zig-cache
@@ -394,7 +461,7 @@ const main_fmt =
     \\    \\ Run a solution to an Advent of Code {[year]} puzzle
     \\    \\
     \\    \\ USEAGE:
-    \\    \\   advent{[year]} `day`
+    \\    \\   {[exename]s} `day`
     \\    \\   where `day` is an integer between 1 and {{}} inclusive
     \\    \\
     \\    \\
