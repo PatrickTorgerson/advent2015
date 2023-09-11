@@ -20,7 +20,7 @@ const help =
     \\
 ;
 
-pub const benchmark_iterations = 10;
+pub const benchmark_iterations = 100;
 
 const SlnFn = *const fn (std.mem.Allocator, *Writer) anyerror!void;
 const solutions = [_]SlnFn{

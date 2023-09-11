@@ -16,13 +16,18 @@ pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime f
     const R = ReturnType(func);
     var r: R = undefined;
 
+    var min: u64 = std.math.maxInt(u64);
+    var max: u64 = 0;
     var sum: usize = 0;
     var time = std.time.Timer.start() catch unreachable;
 
     for (0..iterations) |i| {
         time.reset();
         r = try func(allocator);
-        sum += time.read();
+        const t = time.read();
+        sum += t;
+        min = @min(min, t);
+        max = @max(max, t);
         if (i < iterations - 1) {
             deinitResult(r);
             counting_allocator.current = 0;
@@ -30,9 +35,23 @@ pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime f
     }
 
     writeResult(writer, r);
-    writer.print("\nran {} times\navg time: {}ns\nmemory: {} bytes\n\n", .{
+    writer.print(
+        \\
+        \\
+        \\  - ran {} times
+        \\  - total time: {d:.4}ms
+        \\  - avg time: {d:.4}ms
+        \\  - min time: {d:.4}ms
+        \\  - max time: {d:.4}ms
+        \\  - heap mem: {} bytes
+        \\
+        \\
+    , .{
         iterations,
-        sum / iterations,
+        @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+        @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(iterations)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+        @as(f64, @floatFromInt(min)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+        @as(f64, @floatFromInt(max)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
         counting_allocator.max,
     });
     deinitResult(r);
