@@ -584,7 +584,7 @@ const benchmark_fmt =
     \\        max = @max(max, t);
     \\        if (i < iterations - 1) {{
     \\            deinitResult(r);
-    \\            counting_allocator.current = 0;
+    \\            counting_allocator.reset();
     \\        }}
     \\    }}
     \\
@@ -598,6 +598,8 @@ const benchmark_fmt =
     \\        \\  - min time: {{d:.4}}ms
     \\        \\  - max time: {{d:.4}}ms
     \\        \\  - heap mem: {{}} bytes
+    \\        \\  - heap allocs: {{}}
+    \\        \\  - heap frees: {{}}
     \\        \\
     \\        \\
     \\    , .{{
@@ -607,6 +609,8 @@ const benchmark_fmt =
     \\        @as(f64, @floatFromInt(min)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
     \\        @as(f64, @floatFromInt(max)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
     \\        counting_allocator.max,
+    \\        counting_allocator.allocs,
+    \\        counting_allocator.frees,
     \\    }});
     \\    deinitResult(r);
     \\}}
@@ -686,15 +690,22 @@ const benchmark_fmt =
     \\
     \\const CountingAllocator = struct {{
     \\    inner: std.mem.Allocator,
-    \\    current: usize,
-    \\    max: usize,
+    \\    current: usize = 0,
+    \\    max: usize = 0,
+    \\    allocs: usize = 0,
+    \\    frees: usize = 0,
     \\
     \\    pub fn init(inner: std.mem.Allocator) @This() {{
     \\        return .{{
     \\            .inner = inner,
-    \\            .max = 0,
-    \\            .current = 0,
     \\        }};
+    \\    }}
+    \\
+    \\    pub fn reset(self: *@This()) void {{
+    \\        self.current = 0;
+    \\        self.max = 0;
+    \\        self.allocs = 0;
+    \\        self.frees = 0;
     \\    }}
     \\
     \\    pub fn allocator(self: *@This()) std.mem.Allocator {{
@@ -708,6 +719,7 @@ const benchmark_fmt =
     \\        var self: *@This() = @alignCast(@ptrCast(ctx));
     \\        self.current += len;
     \\        self.max = @max(self.max, self.current);
+    \\        self.allocs += 1;
     \\        return self.inner.vtable.alloc(self.inner.ptr, len, ptr_align, ret_addr);
     \\    }}
     \\
@@ -718,6 +730,7 @@ const benchmark_fmt =
     \\    fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {{
     \\        var self: *@This() = @alignCast(@ptrCast(ctx));
     \\        self.current -= buf.len;
+    \\        self.frees += 1;
     \\        self.inner.vtable.free(self.inner.ptr, buf, buf_align, ret_addr);
     \\    }}
     \\
@@ -727,4 +740,5 @@ const benchmark_fmt =
     \\        .free = free,
     \\    }};
     \\}};
+    \\
 ;
