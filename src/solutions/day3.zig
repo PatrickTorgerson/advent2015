@@ -27,10 +27,40 @@ pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
     try common.avgns(.{ .part1 = p1, .part2 = p2 }, 3);
 }
 
-/// PART 1 DESCRIPTION
-fn part1(allocator: std.mem.Allocator) ![]const u8 {
-    _ = allocator;
-    return "not implemented";
+/// Santa is delivering presents to an infinite two-dimensional grid of houses.
+///
+/// He begins by delivering a present to the house at his starting location, and then an elf at the
+/// North Pole calls him via radio and tells him where to move next. Moves are always exactly one
+/// house to the north (^), south (v), east (>), or west (<). After each move, he delivers another
+/// present to the house at his new location.
+///
+/// However, the elf back at the north pole has had a little too much eggnog, and so his directions
+/// are a little off, and Santa ends up visiting some houses more than once. How many houses receive
+/// at least one present?
+///
+/// For example:
+///
+///   - > delivers presents to 2 houses: one at the starting location, and one to the east.
+///   - ^>v< delivers presents to 4 houses in a square, including twice to the house at his starting/ending location.
+///   - ^v^v^v^v^v delivers a bunch of presents to some very lucky children at only 2 houses.
+///
+fn part1(allocator: std.mem.Allocator) !usize {
+    var location: struct { i32, i32 } = .{ 0, 0 };
+    var visited = std.AutoHashMap(@TypeOf(location), void).init(allocator);
+    defer visited.deinit();
+    try visited.ensureTotalCapacity(2000);
+    try visited.put(location, {});
+    for (input) |move| {
+        switch (move) {
+            '^' => location[1] -= 1,
+            '>' => location[0] += 1,
+            '<' => location[0] -= 1,
+            'v' => location[1] += 1,
+            else => {},
+        }
+        try visited.put(location, {});
+    }
+    return visited.count();
 }
 
 /// PART 2 DESCRIPTION

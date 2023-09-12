@@ -93,6 +93,8 @@ fn part2(_: std.mem.Allocator) !i64 {
     return length;
 }
 
+/// parse an input line into
+/// length, width, and height
 fn parsePresent(
     str: []const u8,
 ) !struct { l: i64, w: i64, h: i64 } {
