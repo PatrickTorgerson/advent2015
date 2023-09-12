@@ -1,4 +1,4 @@
-# advent2015
+# Advent 2015
 
 Advent of code 2015 solutions
  * build with `zig build`
@@ -16,6 +16,12 @@ You can specify the following options
  * `-Dyear=int` is the event year, this is required
  * `-Dexeprefix=[string]` executable name prefix, `<exeprefix><year>`, default is `"advent"`
  * `-Drepo=[string]` is a repo link to include in banner comments
-* `-Dcopyright=[string]` is a copyright notice to include in banner comments
+ * `-Dcopyright=[string]` is a copyright notice to include in banner comments
 
 note, input files are not automatically populated
+
+## file format generation
+
+when `zig build generate` is called it generates files based on file formats found in `build.zig`.
+to update these formats, make the desired changes to the corresponding file then run `zig build fmtgen -Dday=int`. the `-Dday` option specifies which solution file to generate the format from.
+afterwords you will need to re-add the format placeholders in `build.zig`

@@ -16,6 +16,7 @@ const Writer = @import("../Writer.zig");
 
 const input = @embedFile("../input/day2.txt");
 
+/// run and benchmark day 2 solutions
 pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
     writer.print("Part 1: ", .{});
     try benchmark(allocator, writer, part1);

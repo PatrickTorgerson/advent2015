@@ -6,6 +6,7 @@
 
 const std = @import("std");
 
+var day_opt: ?i32 = null;
 var year_opt: ?i32 = null;
 var repo_opt: []const u8 = "use -Drepo=[string] to populate this line";
 var copyright_opt: []const u8 = "use -Dcopyright=[string] to populate this line";
@@ -20,6 +21,7 @@ pub fn build(b: *std.Build) void {
     repo_opt = b.option([]const u8, "repo", "generate: repo link to include in banner comments") orelse repo_opt;
     copyright_opt = b.option([]const u8, "copyright", "generate: copyright to include in banner comments") orelse copyright_opt;
     exeprefix_opt = b.option([]const u8, "exeprefix", "generate: executable name prefix, <prefix><year>") orelse exeprefix_opt;
+    day_opt = b.option(i32, "day", "fmtgen: which solution file to generate format from");
 
     for (exeprefix_opt) |c|
         if (std.ascii.isWhitespace(c)) {
@@ -30,9 +32,13 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // -- directory init, see fn generate()
-    const init_step = b.step("generate", "Generate initial solution files, use -Dyear=[int]");
-    init_step.makeFn = generate;
+    // -- project generation, see fn generate()
+    const gen_step = b.step("generate", "Generate initial solution files, use -Dyear=[int]");
+    gen_step.makeFn = generate;
+
+    // -- fmtgen, see fn fmtgen()
+    const fmtgen_step = b.step("fmtgen", "Generate file formats from source, updates build.zig, use -Dday=[int]");
+    fmtgen_step.makeFn = fmtgen;
 
     // -- executable
     const exe = b.addExecutable(.{
@@ -51,7 +57,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 }
 
-/// Create initial solution files
+/// create initial solution files
 fn generate(_: *std.Build.Step, _: *std.Progress.Node) !void {
     if (year_opt) |year| {
         var cwd = std.fs.cwd();
@@ -65,6 +71,7 @@ fn generate(_: *std.Build.Step, _: *std.Progress.Node) !void {
             .copyright = copyright_opt,
         }) catch {};
         generateFile(cwd, "README.md", readme_fmt, .{
+            .exename = exename,
             .year = year,
         }) catch {};
         generateFile(cwd, "src/Writer.zig", writer_fmt, .{
@@ -103,6 +110,122 @@ fn generate(_: *std.Build.Step, _: *std.Progress.Node) !void {
     }
 }
 
+/// update build.zig with new file formats generated from cwd
+fn fmtgen(_: *std.Build.Step, _: *std.Progress.Node) !void {
+    const day = day_opt orelse blk: {
+        std.debug.print("\nNo day specified, skipping solution format\n\n", .{});
+        break :blk null;
+    };
+
+    const other_files_marker = "// ======== other file formats ======== (do not this comments)";
+    const marker_comment = if (day) |_|
+        "// ======== solution file format ======== (do not this comments)"
+    else
+        other_files_marker;
+
+    var cwd = std.fs.cwd();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var allocator = gpa.allocator();
+
+    var buildfile = try cwd.openFile("build.zig", .{
+        .mode = .read_write,
+    });
+    defer buildfile.close();
+
+    const found_loc: ?usize = blk: {
+        const buildsrc = try buildfile.readToEndAlloc(allocator, @intCast(buildfile.getEndPos() catch std.math.maxInt(u64)));
+        defer allocator.free(buildsrc);
+        var lines = std.mem.splitScalar(u8, buildsrc, '\n');
+        while (lines.next()) |line| {
+            if (std.mem.eql(u8, line, marker_comment)) {
+                break :blk lines.index orelse null;
+            }
+        }
+        break :blk null;
+    } orelse {
+        std.debug.print("\ncould not find format marking comment, did you edit a comment you weren't supposed to?\n", .{});
+        return;
+    };
+
+    if (found_loc) |loc| {
+        try buildfile.seekTo(loc + 1);
+        var writer = buildfile.writer();
+
+        if (day) |d| {
+            var buffer: [128]u8 = undefined;
+            const filepath = try getSolutionFileName(&buffer, @intCast(d));
+            try writeFileFormat(cwd, writer, allocator, filepath, "solution_fmt", true);
+            try writer.writeAll(other_files_marker);
+            try writer.writeAll("\n\n");
+        }
+
+        try writeFileFormat(cwd, writer, allocator, ".gitignore", "gitignore_fmt", false);
+        try writeFileFormat(cwd, writer, allocator, "LICENSE", "license_fmt", false);
+        try writeFileFormat(cwd, writer, allocator, "README.md", "readme_fmt", false);
+        try writeFileFormat(cwd, writer, allocator, "src/common.zig", "common_fmt", true);
+        try writeFileFormat(cwd, writer, allocator, "src/main.zig", "main_fmt", true);
+        try writeFileFormat(cwd, writer, allocator, "src/Writer.zig", "writer_fmt", true);
+        try writeFileFormat(cwd, writer, allocator, "src/benchmark.zig", "benchmark_fmt", true);
+        try buildfile.setEndPos(try buildfile.getPos());
+    }
+}
+
+///
+fn writeFileFormat(
+    cwd: std.fs.Dir,
+    writer: anytype,
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    name: []const u8,
+    print_banner: bool,
+) !void {
+    const source = blk: {
+        var file = try cwd.openFile(path, .{});
+        defer file.close();
+        break :blk try file.readToEndAlloc(allocator, @intCast(file.getEndPos() catch std.math.maxInt(u64)));
+    };
+    defer allocator.free(source);
+
+    try writer.print("const {s} =\n", .{name});
+    if (print_banner) try writeBannerFormat(writer);
+
+    var lines = std.mem.splitScalar(u8, source, '\n');
+
+    var banner: bool = print_banner;
+    while (lines.next()) |line| {
+        if (banner and line.len > 1 and line[0] == '/' and line[1] == '/') {} else {
+            banner = false;
+            try writer.writeAll("    \\\\");
+            for (line, 0..) |c, i| {
+                _ = i;
+                if (c == '{') {
+                    try writer.writeAll("{{");
+                } else if (c == '}') {
+                    try writer.writeAll("}}");
+                } else {
+                    try writer.writeByte(c);
+                }
+            }
+            try writer.writeByte('\n');
+        }
+    }
+
+    try writer.writeAll(";\n\n");
+}
+
+fn writeBannerFormat(writer: anytype) !void {
+    try writer.writeAll(
+        \\    \\// ********************************************************************************
+        \\    \\//  {[repo]s}
+        \\    \\//  {[copyright]s}
+        \\    \\//  MIT license, see LICENSE for more information
+        \\    \\// ********************************************************************************
+        \\
+    );
+}
+
+/// generate a file with the given format
 fn generateFile(cwd: std.fs.Dir, filename: []const u8, comptime fmt: []const u8, args: anytype) !void {
     var file = cwd.createFile(filename, .{ .exclusive = true }) catch |err| {
         std.debug.print("({s}): could not generate file '{s}'\n", .{ @errorName(err), filename });
@@ -115,6 +238,7 @@ fn generateFile(cwd: std.fs.Dir, filename: []const u8, comptime fmt: []const u8,
     };
 }
 
+/// build executable name
 fn getExeName(buffer: []u8, year: i32) ![]const u8 {
     var stream = std.io.fixedBufferStream(buffer);
     var writer = stream.writer();
@@ -125,6 +249,7 @@ fn getExeName(buffer: []u8, year: i32) ![]const u8 {
     return buffer[0..stream.pos];
 }
 
+/// update build.zig with new executable name
 fn setExeName(cwd: std.fs.Dir, year: i32) !void {
     var buffer: [128]u8 = undefined;
     const name = try getExeName(&buffer, year);
@@ -157,6 +282,7 @@ fn setExeName(cwd: std.fs.Dir, year: i32) !void {
             }
         }
     } else .{ 0, 0 };
+
     try thisfile.seekTo(0);
     try thisfile.writeAll(file_buffer[0..loc[0]]);
     try thisfile.writeAll(name);
@@ -164,6 +290,7 @@ fn setExeName(cwd: std.fs.Dir, year: i32) !void {
     try thisfile.setEndPos(try thisfile.getPos());
 }
 
+/// get path to a solution file
 fn getSolutionFileName(buffer: []u8, day: usize) ![]const u8 {
     var stream = std.io.fixedBufferStream(buffer);
     var writer = stream.writer();
@@ -174,6 +301,7 @@ fn getSolutionFileName(buffer: []u8, day: usize) ![]const u8 {
     return buffer[0..stream.pos];
 }
 
+/// get path to an input file
 fn getInputFileName(buffer: []u8, day: usize) ![]const u8 {
     var stream = std.io.fixedBufferStream(buffer);
     var writer = stream.writer();
@@ -184,8 +312,51 @@ fn getInputFileName(buffer: []u8, day: usize) ![]const u8 {
     return buffer[0..stream.pos];
 }
 
-//  ====== file formats ======
-// (do not remove this comment)
+// ======== solution file format ======== (do not this comments)
+
+const solution_fmt =
+    \\// ********************************************************************************
+    \\//  {[repo]s}
+    \\//  {[copyright]s}
+    \\//  MIT license, see LICENSE for more information
+    \\// ********************************************************************************
+    \\
+    \\//
+    \\// https://adventofcode.com/{[year]}/day/{[day]}
+    \\// https://adventofcode.com/{[year]}/day/{[day]}/input
+    \\//
+    \\
+    \\const std = @import("std");
+    \\const common = @import("../common.zig");
+    \\const benchmark = @import("../benchmark.zig").benchmark;
+    \\const Writer = @import("../Writer.zig");
+    \\
+    \\const input = @embedFile("../input/day{[day]}.txt");
+    \\
+    \\/// run and benchmark day {[day]} solutions
+    \\pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {{
+    \\    writer.print("Part 1: ", .{{}});
+    \\    try benchmark(allocator, writer, part1);
+    \\    writer.flush();
+    \\    writer.print("Part 2: ", .{{}});
+    \\    try benchmark(allocator, writer, part2);
+    \\}}
+    \\
+    \\/// PART 1 DESCRIPTION
+    \\fn part1(allocator: std.mem.Allocator) ![]const u8 {{
+    \\    _ = allocator;
+    \\    return "not implemented";
+    \\}}
+    \\
+    \\/// PART 2 DESCRIPTION
+    \\fn part2(allocator: std.mem.Allocator) ![]const u8 {{
+    \\    _ = allocator;
+    \\    return "not implemented";
+    \\}}
+    \\
+;
+
+// ======== other file formats ======== (do not this comments)
 
 const gitignore_fmt =
     \\zig-cache
@@ -220,24 +391,132 @@ const license_fmt =
 ;
 
 const readme_fmt =
-    \\# advent{[year]}
+    \\# Advent {[year]}
     \\
     \\Advent of code {[year]} solutions
     \\ * build with `zig build`
     \\ * run with `zig build run -- ARGS`
     \\
-    \\to run a specific solution run `advent{[year]} DAY`, where `DAY` is an
+    \\to run a specific solution run `{[exename]s} DAY`, where `DAY` is an
     \\integer between 1 and 25 inclusive.
     \\
     \\## project generation
     \\
     \\re-generate missing files, or generate files for another Advent of Code event with
-    \\`zig build generate -Dyear=YEAR -Drepo=LINK -Dcopyright=CPYRT`, all you need is the `build.zig` file.
-    \\ * where `YEAR` is the event year
-    \\ * where `LINK` is a repo link to include in banner comments
-    \\ * where `CPYRT` is a copyright notice to include in banner comments
+    \\`zig build generate -Dyear=YEAR`, all you need is the `build.zig` file.
+    \\
+    \\You can specify the following options
+    \\ * `-Dyear=int` is the event year, this is required
+    \\ * `-Dexeprefix=[string]` executable name prefix, `<exeprefix><year>`, default is `"advent"`
+    \\ * `-Drepo=[string]` is a repo link to include in banner comments
+    \\ * `-Dcopyright=[string]` is a copyright notice to include in banner comments
     \\
     \\note, input files are not automatically populated
+    \\
+    \\## file format generation
+    \\
+    \\when `zig build generate` is called it generates files based on file formats found in `build.zig`.
+    \\to update these formats, make the desired changes to the corresponding file then run `zig build fmtgen -Dday=int`. the `-Dday` option specifies which solution file to generate the format from.
+    \\afterwords you will need to re-add the format placeholders in `build.zig`
+    \\
+;
+
+const common_fmt =
+    \\// ********************************************************************************
+    \\//  {[repo]s}
+    \\//  {[copyright]s}
+    \\//  MIT license, see LICENSE for more information
+    \\// ********************************************************************************
+    \\
+    \\const std = @import("std");
+    \\
+    \\// here you may write code that can be used in any solution file
+    \\
+;
+
+const main_fmt =
+    \\// ********************************************************************************
+    \\//  {[repo]s}
+    \\//  {[copyright]s}
+    \\//  MIT license, see LICENSE for more information
+    \\// ********************************************************************************
+    \\
+    \\// https://adventofcode.com/{[year]}
+    \\
+    \\const std = @import("std");
+    \\const Writer = @import("Writer.zig");
+    \\
+    \\const help =
+    \\    \\
+    \\    \\ Run a solution to an Advent of Code {[year]} puzzle
+    \\    \\
+    \\    \\ USEAGE:
+    \\    \\   {[exename]s} `day`
+    \\    \\   where `day` is an integer between 1 and {{}} inclusive
+    \\    \\
+    \\    \\
+    \\;
+    \\
+    \\pub const benchmark_iterations = 100;
+    \\
+    \\const SlnFn = *const fn (std.mem.Allocator, *Writer) anyerror!void;
+    \\const solutions = [_]SlnFn{{
+    \\    @import("solutions/day1.zig").solve,
+    \\    @import("solutions/day2.zig").solve,
+    \\    @import("solutions/day3.zig").solve,
+    \\    @import("solutions/day4.zig").solve,
+    \\    @import("solutions/day5.zig").solve,
+    \\    @import("solutions/day6.zig").solve,
+    \\    @import("solutions/day7.zig").solve,
+    \\    @import("solutions/day8.zig").solve,
+    \\    @import("solutions/day9.zig").solve,
+    \\    @import("solutions/day10.zig").solve,
+    \\    @import("solutions/day11.zig").solve,
+    \\    @import("solutions/day12.zig").solve,
+    \\    @import("solutions/day13.zig").solve,
+    \\    @import("solutions/day14.zig").solve,
+    \\    @import("solutions/day15.zig").solve,
+    \\    @import("solutions/day16.zig").solve,
+    \\    @import("solutions/day17.zig").solve,
+    \\    @import("solutions/day18.zig").solve,
+    \\    @import("solutions/day19.zig").solve,
+    \\    @import("solutions/day20.zig").solve,
+    \\    @import("solutions/day21.zig").solve,
+    \\    @import("solutions/day22.zig").solve,
+    \\    @import("solutions/day23.zig").solve,
+    \\    @import("solutions/day24.zig").solve,
+    \\    @import("solutions/day25.zig").solve,
+    \\}};
+    \\
+    \\pub fn main() !void {{
+    \\    var gpa = std.heap.GeneralPurposeAllocator(.{{}}){{}};
+    \\    defer _ = gpa.deinit();
+    \\    var allocator = gpa.allocator();
+    \\
+    \\    var writer: Writer = undefined;
+    \\    writer.init();
+    \\    defer writer.flush();
+    \\
+    \\    const day = getDay(allocator) orelse {{
+    \\        writer.print(help, .{{solutions.len}});
+    \\        return;
+    \\    }};
+    \\
+    \\    writer.print("\n==== Running day {{}} ====\n\n", .{{day + 1}});
+    \\    try solutions[day](allocator, &writer);
+    \\}}
+    \\
+    \\fn getDay(allocator: std.mem.Allocator) ?usize {{
+    \\    var args = std.process.argsWithAllocator(allocator) catch return null;
+    \\    defer args.deinit();
+    \\    _ = args.next(); // ignore executable path
+    \\    if (args.next()) |day_str| {{
+    \\        const day = std.fmt.parseInt(i32, day_str, 10) catch return null;
+    \\        if (day < 1 or day > solutions.len)
+    \\            return null;
+    \\        return @intCast(day - 1);
+    \\    }} else return null;
+    \\}}
     \\
 ;
 
@@ -448,144 +727,4 @@ const benchmark_fmt =
     \\        .free = free,
     \\    }};
     \\}};
-;
-
-const common_fmt =
-    \\// ********************************************************************************
-    \\//  {[repo]s}
-    \\//  {[copyright]s}
-    \\//  MIT license, see LICENSE for more information
-    \\// ********************************************************************************
-    \\
-    \\const std = @import("std");
-    \\
-    \\// here you may write code that can be used in any solution file
-    \\
-;
-
-const main_fmt =
-    \\// ********************************************************************************
-    \\//  {[repo]s}
-    \\//  {[copyright]s}
-    \\//  MIT license, see LICENSE for more information
-    \\// ********************************************************************************
-    \\
-    \\// https://adventofcode.com/{[year]}
-    \\
-    \\const std = @import("std");
-    \\const Writer = @import("Writer.zig");
-    \\
-    \\const help =
-    \\    \\
-    \\    \\ Run a solution to an Advent of Code {[year]} puzzle
-    \\    \\
-    \\    \\ USEAGE:
-    \\    \\   {[exename]s} `day`
-    \\    \\   where `day` is an integer between 1 and {{}} inclusive
-    \\    \\
-    \\    \\
-    \\;
-    \\
-    \\pub const benchmark_iterations = 10;
-    \\
-    \\const SlnFn = *const fn (std.mem.Allocator, *Writer) anyerror!void;
-    \\const solutions = [_]SlnFn{{
-    \\    @import("solutions/day1.zig").solve,
-    \\    @import("solutions/day2.zig").solve,
-    \\    @import("solutions/day3.zig").solve,
-    \\    @import("solutions/day4.zig").solve,
-    \\    @import("solutions/day5.zig").solve,
-    \\    @import("solutions/day6.zig").solve,
-    \\    @import("solutions/day7.zig").solve,
-    \\    @import("solutions/day8.zig").solve,
-    \\    @import("solutions/day9.zig").solve,
-    \\    @import("solutions/day10.zig").solve,
-    \\    @import("solutions/day11.zig").solve,
-    \\    @import("solutions/day12.zig").solve,
-    \\    @import("solutions/day13.zig").solve,
-    \\    @import("solutions/day14.zig").solve,
-    \\    @import("solutions/day15.zig").solve,
-    \\    @import("solutions/day16.zig").solve,
-    \\    @import("solutions/day17.zig").solve,
-    \\    @import("solutions/day18.zig").solve,
-    \\    @import("solutions/day19.zig").solve,
-    \\    @import("solutions/day20.zig").solve,
-    \\    @import("solutions/day21.zig").solve,
-    \\    @import("solutions/day22.zig").solve,
-    \\    @import("solutions/day23.zig").solve,
-    \\    @import("solutions/day24.zig").solve,
-    \\    @import("solutions/day25.zig").solve,
-    \\}};
-    \\
-    \\pub fn main() !void {{
-    \\    var gpa = std.heap.GeneralPurposeAllocator(.{{}}){{}};
-    \\    defer _ = gpa.deinit();
-    \\    var allocator = gpa.allocator();
-    \\
-    \\    var writer: Writer = undefined;
-    \\    writer.init();
-    \\    defer writer.flush();
-    \\
-    \\    const day = getDay(allocator) orelse {{
-    \\        writer.print(help, .{{solutions.len}});
-    \\        return;
-    \\    }};
-    \\
-    \\    writer.print("\n==== Running day {{}} ====\n\n", .{{day + 1}});
-    \\    try solutions[day](allocator, &writer);
-    \\}}
-    \\
-    \\fn getDay(allocator: std.mem.Allocator) ?usize {{
-    \\    var args = std.process.argsWithAllocator(allocator) catch return null;
-    \\    defer args.deinit();
-    \\    _ = args.next(); // ignore executable path
-    \\    if (args.next()) |day_str| {{
-    \\        const day = std.fmt.parseInt(i32, day_str, 10) catch return null;
-    \\        if (day < 1 or day > solutions.len)
-    \\            return null;
-    \\        return @intCast(day - 1);
-    \\    }} else return null;
-    \\}}
-    \\
-;
-
-const solution_fmt =
-    \\// ********************************************************************************
-    \\//  {[repo]s}
-    \\//  {[copyright]s}
-    \\//  MIT license, see LICENSE for more information
-    \\// ********************************************************************************
-    \\
-    \\//
-    \\// https://adventofcode.com/{[year]}/day/{[day]}
-    \\// https://adventofcode.com/{[year]}/day/{[day]}/input
-    \\//
-    \\
-    \\const std = @import("std");
-    \\const common = @import("../common.zig");
-    \\const benchmark = @import("../benchmark.zig").benchmark;
-    \\const Writer = @import("../Writer.zig");
-    \\
-    \\const input = @embedFile("../input/day{[day]}.txt");
-    \\
-    \\pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {{
-    \\    writer.print("Part 1: ", .{{}});
-    \\    try benchmark(allocator, writer, part1);
-    \\    writer.flush();
-    \\    writer.print("Part 2: ", .{{}});
-    \\    try benchmark(allocator, writer, part2);
-    \\}}
-    \\
-    \\/// PART 1 DESCRIPTION
-    \\fn part1(allocator: std.mem.Allocator) ![]const u8 {{
-    \\    _ = allocator;
-    \\    return "not implemented";
-    \\}}
-    \\
-    \\/// PART 2 DESCRIPTION
-    \\fn part2(allocator: std.mem.Allocator) ![]const u8 {{
-    \\    _ = allocator;
-    \\    return "not implemented";
-    \\}}
-    \\
 ;
