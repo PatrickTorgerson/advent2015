@@ -18,11 +18,13 @@ const input = @embedFile("../input/day2.txt");
 
 /// run and benchmark day 2 solutions
 pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
+    const prevns = try common.prevns(2);
     writer.print("Part 1: ", .{});
-    try benchmark(allocator, writer, part1);
+    const p1 = try benchmark(allocator, writer, part1, prevns.part1);
     writer.flush();
     writer.print("Part 2: ", .{});
-    try benchmark(allocator, writer, part2);
+    const p2 = try benchmark(allocator, writer, part2, prevns.part2);
+    try common.avgns(.{ .part1 = p1, .part2 = p2 }, 2);
 }
 
 /// The elves are running low on wrapping paper, and so they need to submit an order for more.

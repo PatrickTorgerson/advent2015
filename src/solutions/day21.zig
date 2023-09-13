@@ -18,11 +18,13 @@ const input = @embedFile("../input/day21.txt");
 
 /// run and benchmark day 21 solutions
 pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
+    const prevns = try common.prevns(21);
     writer.print("Part 1: ", .{});
-    try benchmark(allocator, writer, part1);
+    const p1 = try benchmark(allocator, writer, part1, prevns.part1);
     writer.flush();
     writer.print("Part 2: ", .{});
-    try benchmark(allocator, writer, part2);
+    const p2 = try benchmark(allocator, writer, part2, prevns.part2);
+    try common.avgns(.{ .part1 = p1, .part2 = p2 }, 21);
 }
 
 /// PART 1 DESCRIPTION

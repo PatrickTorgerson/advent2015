@@ -9,7 +9,7 @@ const Writer = @import("Writer.zig");
 
 const iterations = std.meta.globalOption("benchmark_iterations", usize) orelse 1;
 
-pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime func: anytype) !void {
+pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime func: anytype, prevns: usize) !usize {
     var counting_allocator = CountingAllocator.init(inner_allocator);
     var allocator = counting_allocator.allocator();
 
@@ -34,13 +34,17 @@ pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime f
         }
     }
 
+    const avg = sum / iterations;
+    const dif: isize = @as(isize, @intCast(avg)) - @as(isize, @intCast(prevns));
+    const abs = std.math.absInt(dif) catch std.math.maxInt(isize);
+
     writeResult(writer, r);
     writer.print(
         \\
         \\
         \\  - ran {} times
         \\  - total time: {d:.4}ms
-        \\  - avg time: {d:.4}ms
+        \\  - avg time: {d:.4}ms {s}{d:.4}ms{s}
         \\  - min time: {d:.4}ms
         \\  - max time: {d:.4}ms
         \\  - heap mem: {} bytes
@@ -51,7 +55,10 @@ pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime f
     , .{
         iterations,
         @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
-        @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(iterations)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+        @as(f64, @floatFromInt(avg)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+        if (dif < 0) "\x1b[32m-" else "\x1b[31m+",
+        @as(f64, @floatFromInt(abs)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+        "\x1b[0m",
         @as(f64, @floatFromInt(min)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
         @as(f64, @floatFromInt(max)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
         counting_allocator.max,
@@ -59,6 +66,7 @@ pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime f
         counting_allocator.frees,
     });
     deinitResult(r);
+    return avg;
 }
 
 fn deinitResult(r: anytype) void {

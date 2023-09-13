@@ -335,11 +335,13 @@ const solution_fmt =
     \\
     \\/// run and benchmark day {[day]} solutions
     \\pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {{
+    \\    const prevns = try common.prevns({[day]});
     \\    writer.print("Part 1: ", .{{}});
-    \\    try benchmark(allocator, writer, part1);
+    \\    const p1 = try benchmark(allocator, writer, part1, prevns.part1);
     \\    writer.flush();
     \\    writer.print("Part 2: ", .{{}});
-    \\    try benchmark(allocator, writer, part2);
+    \\    const p2 = try benchmark(allocator, writer, part2, prevns.part2);
+    \\    try common.avgns(.{{ .part1 = p1, .part2 = p2 }}, {[day]});
     \\}}
     \\
     \\/// PART 1 DESCRIPTION
@@ -362,6 +364,7 @@ const gitignore_fmt =
     \\zig-cache
     \\zig-out
     \\.vscode
+    \\benchmark.dat
     \\
 ;
 
@@ -432,6 +435,63 @@ const common_fmt =
     \\
     \\// here you may write code that can be used in any solution file
     \\
+    \\pub const Result = extern struct {{ part1: usize = 0, part2: usize = 0 }};
+    \\
+    \\/// reads average ns for day from previous run
+    \\pub fn prevns(day: usize) !Result {{
+    \\    const path = std.meta.globalOption("benchmark_file", []const u8) orelse "bench.dat";
+    \\    var cwd = std.fs.cwd();
+    \\    var file = try cwd.createFile(path, .{{
+    \\        .read = true,
+    \\        .truncate = false,
+    \\    }});
+    \\    defer file.close();
+    \\
+    \\    const stride = @sizeOf(Result);
+    \\
+    \\    try file.seekFromEnd(0);
+    \\    const file_size = try file.getPos();
+    \\
+    \\    if (file_size < stride * 25) {{
+    \\        try file.seekTo(0);
+    \\        const zero = Result{{}};
+    \\        for (0..25) |_|
+    \\            try file.writer().writeStruct(zero);
+    \\        try file.setEndPos(try file.getPos());
+    \\        return zero;
+    \\    }}
+    \\
+    \\    try file.seekTo(stride * (day + 1));
+    \\    return try file.reader().readStruct(Result);
+    \\}}
+    \\
+    \\/// writes average ns for day
+    \\pub fn avgns(times: Result, day: usize) !void {{
+    \\    const path = std.meta.globalOption("benchmark_file", []const u8) orelse "bench.dat";
+    \\    var cwd = std.fs.cwd();
+    \\    var file = try cwd.createFile(path, .{{
+    \\        .read = true,
+    \\        .truncate = false,
+    \\    }});
+    \\    defer file.close();
+    \\
+    \\    const stride = @sizeOf(Result);
+    \\
+    \\    try file.seekFromEnd(0);
+    \\    const file_size = try file.getPos();
+    \\
+    \\    if (file_size < stride * 25) {{
+    \\        try file.seekTo(0);
+    \\        const zero = Result{{}};
+    \\        for (0..25) |_|
+    \\            try file.writer().writeStruct(zero);
+    \\        try file.setEndPos(try file.getPos());
+    \\    }}
+    \\
+    \\    try file.seekTo(stride * (day + 1));
+    \\    try file.writer().writeStruct(times);
+    \\}}
+    \\
 ;
 
 const main_fmt =
@@ -458,6 +518,7 @@ const main_fmt =
     \\;
     \\
     \\pub const benchmark_iterations = 100;
+    \\pub const benchmark_file = "benchmark.dat";
     \\
     \\const SlnFn = *const fn (std.mem.Allocator, *Writer) anyerror!void;
     \\const solutions = [_]SlnFn{{
@@ -563,7 +624,7 @@ const benchmark_fmt =
     \\
     \\const iterations = std.meta.globalOption("benchmark_iterations", usize) orelse 1;
     \\
-    \\pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime func: anytype) !void {{
+    \\pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime func: anytype, prevns: usize) !usize {{
     \\    var counting_allocator = CountingAllocator.init(inner_allocator);
     \\    var allocator = counting_allocator.allocator();
     \\
@@ -588,13 +649,17 @@ const benchmark_fmt =
     \\        }}
     \\    }}
     \\
+    \\    const avg = sum / iterations;
+    \\    const dif: isize = @as(isize, @intCast(avg)) - @as(isize, @intCast(prevns));
+    \\    const abs = std.math.absInt(dif) catch std.math.maxInt(isize);
+    \\
     \\    writeResult(writer, r);
     \\    writer.print(
     \\        \\
     \\        \\
     \\        \\  - ran {{}} times
     \\        \\  - total time: {{d:.4}}ms
-    \\        \\  - avg time: {{d:.4}}ms
+    \\        \\  - avg time: {{d:.4}}ms {{s}}{{d:.4}}ms{{s}}
     \\        \\  - min time: {{d:.4}}ms
     \\        \\  - max time: {{d:.4}}ms
     \\        \\  - heap mem: {{}} bytes
@@ -605,7 +670,10 @@ const benchmark_fmt =
     \\    , .{{
     \\        iterations,
     \\        @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
-    \\        @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(iterations)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+    \\        @as(f64, @floatFromInt(avg)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+    \\        if (dif < 0) "\x1b[32m-" else "\x1b[31m+",
+    \\        @as(f64, @floatFromInt(abs)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
+    \\        "\x1b[0m",
     \\        @as(f64, @floatFromInt(min)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
     \\        @as(f64, @floatFromInt(max)) / @as(f64, @floatFromInt(std.time.ns_per_ms)),
     \\        counting_allocator.max,
@@ -613,6 +681,7 @@ const benchmark_fmt =
     \\        counting_allocator.frees,
     \\    }});
     \\    deinitResult(r);
+    \\    return avg;
     \\}}
     \\
     \\fn deinitResult(r: anytype) void {{
