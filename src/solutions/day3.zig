@@ -63,8 +63,37 @@ fn part1(allocator: std.mem.Allocator) !usize {
     return visited.count();
 }
 
-/// PART 2 DESCRIPTION
-fn part2(allocator: std.mem.Allocator) ![]const u8 {
-    _ = allocator;
-    return "not implemented";
+/// The next year, to speed up the process, Santa creates a robot version of himself, Robo-Santa,
+/// to deliver presents with him.
+///
+/// Santa and Robo-Santa start at the same location (delivering two presents to the same starting
+/// house), then take turns moving based on instructions from the elf, who is eggnoggedly reading
+/// from the same script as the previous year.
+///
+/// This year, how many houses receive at least one present?
+///
+/// For example:
+///
+///   - ^v delivers presents to 3 houses, because Santa goes north, and then Robo-Santa goes south.
+///   - ^>v< now delivers presents to 3 houses, and Santa and Robo-Santa end up back where they started.
+///   - ^v^v^v^v^v now delivers presents to 11 houses, with Santa going one direction and Robo-Santa going the other.
+///
+fn part2(allocator: std.mem.Allocator) !usize {
+    var locations: [2]struct { i32, i32 } = .{ .{ 0, 0 }, .{ 0, 0 } };
+    var visited = std.AutoHashMap(@TypeOf(locations[0]), void).init(allocator);
+    defer visited.deinit();
+    try visited.ensureTotalCapacity(2000);
+    try visited.put(locations[0], {});
+    for (input, 0..) |move, i| {
+        const l = i % 2;
+        switch (move) {
+            '^' => locations[l][1] -= 1,
+            '>' => locations[l][0] += 1,
+            '<' => locations[l][0] -= 1,
+            'v' => locations[l][1] += 1,
+            else => {},
+        }
+        try visited.put(locations[l], {});
+    }
+    return visited.count();
 }
