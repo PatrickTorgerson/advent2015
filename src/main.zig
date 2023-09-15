@@ -20,7 +20,7 @@ const help =
     \\
 ;
 
-pub const benchmark_iterations = 100;
+pub const benchmark_iterations = 1;
 pub const benchmark_file = "benchmark.dat";
 
 const SlnFn = *const fn (std.mem.Allocator, *Writer) anyerror!void;
