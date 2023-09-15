@@ -45,6 +45,7 @@ pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
 ///
 fn part1(allocator: std.mem.Allocator) !u64 {
     var buffer = try std.ArrayList(u8).initCapacity(allocator, input.len + 32);
+    defer buffer.deinit();
     try buffer.appendSlice(input[0..8]);
     const num_start = buffer.items.len;
     var num: u64 = 1;
@@ -64,6 +65,7 @@ fn part1(allocator: std.mem.Allocator) !u64 {
 fn part2(allocator: std.mem.Allocator) !u64 {
     var buffer = try std.ArrayList(u8).initCapacity(allocator, input.len + 32);
     try buffer.appendSlice(input[0..8]);
+    defer buffer.deinit();
     const num_start = buffer.items.len;
     var num: u64 = 1;
     while (num < std.math.maxInt(u64) - 1) {
