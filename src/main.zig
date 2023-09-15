@@ -77,7 +77,7 @@ pub fn main() !void {
         for (&times, 0..) |t, d| {
             if (t.part1 == 0 and t.part2 == 0) continue;
             const ms1 = @as(f64, @floatFromInt(t.part1)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
-            const ms2 = @as(f64, @floatFromInt(t.part1)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
+            const ms2 = @as(f64, @floatFromInt(t.part2)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
             writer.print(" Day {: >2}: {d: >10.4}ms {d: >10.4}ms\n", .{ d + 1, ms1, ms2 });
         }
         writer.print("\n", .{});
