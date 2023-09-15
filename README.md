@@ -7,6 +7,8 @@ Advent of code 2015 solutions
 to run a specific solution run `advent2015 DAY`, where `DAY` is an
 integer between 1 and 25 inclusive.
 
+to print a list of cached benchmarks run `advent2015 times`
+
 ## project generation
 
 re-generate missing files, or generate files for another Advent of Code event with

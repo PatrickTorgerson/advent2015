@@ -328,20 +328,21 @@ const solution_fmt =
     \\
     \\const std = @import("std");
     \\const common = @import("../common.zig");
-    \\const benchmark = @import("../benchmark.zig").benchmark;
+    \\const bench = @import("../benchmark.zig");
+    \\const benchmark = bench.benchmark;
     \\const Writer = @import("../Writer.zig");
     \\
     \\const input = @embedFile("../input/day{[day]}.txt");
     \\
     \\/// run and benchmark day {[day]} solutions
     \\pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {{
-    \\    const prevns = try common.prevns({[day]});
+    \\    const prevns = try bench.prevns({[day]});
     \\    writer.print("Part 1: ", .{{}});
     \\    const p1 = try benchmark(allocator, writer, part1, prevns.part1);
     \\    writer.flush();
     \\    writer.print("Part 2: ", .{{}});
     \\    const p2 = try benchmark(allocator, writer, part2, prevns.part2);
-    \\    try common.avgns(.{{ .part1 = p1, .part2 = p2 }}, {[day]});
+    \\    try bench.avgns(.{{ .part1 = p1, .part2 = p2 }}, {[day]});
     \\}}
     \\
     \\/// PART 1 DESCRIPTION
@@ -403,6 +404,8 @@ const readme_fmt =
     \\to run a specific solution run `{[exename]s} DAY`, where `DAY` is an
     \\integer between 1 and 25 inclusive.
     \\
+    \\to print a list of cached benchmarks run `{[exename]s} times`
+    \\
     \\## project generation
     \\
     \\re-generate missing files, or generate files for another Advent of Code event with
@@ -435,63 +438,6 @@ const common_fmt =
     \\
     \\// here you may write code that can be used in any solution file
     \\
-    \\pub const Result = extern struct {{ part1: usize = 0, part2: usize = 0 }};
-    \\
-    \\/// reads average ns for day from previous run
-    \\pub fn prevns(day: usize) !Result {{
-    \\    const path = std.meta.globalOption("benchmark_file", []const u8) orelse "bench.dat";
-    \\    var cwd = std.fs.cwd();
-    \\    var file = try cwd.createFile(path, .{{
-    \\        .read = true,
-    \\        .truncate = false,
-    \\    }});
-    \\    defer file.close();
-    \\
-    \\    const stride = @sizeOf(Result);
-    \\
-    \\    try file.seekFromEnd(0);
-    \\    const file_size = try file.getPos();
-    \\
-    \\    if (file_size < stride * 25) {{
-    \\        try file.seekTo(0);
-    \\        const zero = Result{{}};
-    \\        for (0..25) |_|
-    \\            try file.writer().writeStruct(zero);
-    \\        try file.setEndPos(try file.getPos());
-    \\        return zero;
-    \\    }}
-    \\
-    \\    try file.seekTo(stride * (day + 1));
-    \\    return try file.reader().readStruct(Result);
-    \\}}
-    \\
-    \\/// writes average ns for day
-    \\pub fn avgns(times: Result, day: usize) !void {{
-    \\    const path = std.meta.globalOption("benchmark_file", []const u8) orelse "bench.dat";
-    \\    var cwd = std.fs.cwd();
-    \\    var file = try cwd.createFile(path, .{{
-    \\        .read = true,
-    \\        .truncate = false,
-    \\    }});
-    \\    defer file.close();
-    \\
-    \\    const stride = @sizeOf(Result);
-    \\
-    \\    try file.seekFromEnd(0);
-    \\    const file_size = try file.getPos();
-    \\
-    \\    if (file_size < stride * 25) {{
-    \\        try file.seekTo(0);
-    \\        const zero = Result{{}};
-    \\        for (0..25) |_|
-    \\            try file.writer().writeStruct(zero);
-    \\        try file.setEndPos(try file.getPos());
-    \\    }}
-    \\
-    \\    try file.seekTo(stride * (day + 1));
-    \\    try file.writer().writeStruct(times);
-    \\}}
-    \\
 ;
 
 const main_fmt =
@@ -505,6 +451,7 @@ const main_fmt =
     \\
     \\const std = @import("std");
     \\const Writer = @import("Writer.zig");
+    \\const bench = @import("benchmark.zig");
     \\
     \\const help =
     \\    \\
@@ -512,13 +459,16 @@ const main_fmt =
     \\    \\
     \\    \\ USEAGE:
     \\    \\   {[exename]s} `day`
-    \\    \\   where `day` is an integer between 1 and {{}} inclusive
+    \\    \\       where `day` is an integer between 1 and {{}} inclusive
+    \\    \\   {[exename]s} times
+    \\    \\       display cached times for all solutions
     \\    \\
     \\    \\
     \\;
     \\
     \\pub const benchmark_iterations = 100;
     \\pub const benchmark_file = "benchmark.dat";
+    \\const run_times = 666;
     \\
     \\const SlnFn = *const fn (std.mem.Allocator, *Writer) anyerror!void;
     \\const solutions = [_]SlnFn{{
@@ -563,8 +513,21 @@ const main_fmt =
     \\        return;
     \\    }};
     \\
-    \\    writer.print("\n==== Running day {{}} ====\n\n", .{{day + 1}});
-    \\    try solutions[day](allocator, &writer);
+    \\    if (day == run_times) {{
+    \\        const times = try bench.readall();
+    \\        writer.print("\n              part 1       part 2\n", .{{}});
+    \\        writer.print("-------------------------------------\n", .{{}});
+    \\        for (&times, 0..) |t, d| {{
+    \\            if (t.part1 == 0 and t.part2 == 0) continue;
+    \\            const ms1 = @as(f64, @floatFromInt(t.part1)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
+    \\            const ms2 = @as(f64, @floatFromInt(t.part1)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
+    \\            writer.print(" Day {{: >2}}: {{d: >10.4}}ms {{d: >10.4}}ms\n", .{{ d + 1, ms1, ms2 }});
+    \\        }}
+    \\        writer.print("\n", .{{}});
+    \\    }} else {{
+    \\        writer.print("\n==== Running day {{}} ====\n\n", .{{day + 1}});
+    \\        try solutions[day](allocator, &writer);
+    \\    }}
     \\}}
     \\
     \\fn getDay(allocator: std.mem.Allocator) ?usize {{
@@ -572,6 +535,8 @@ const main_fmt =
     \\    defer args.deinit();
     \\    _ = args.next(); // ignore executable path
     \\    if (args.next()) |day_str| {{
+    \\        if (std.mem.eql(u8, day_str, "times"))
+    \\            return run_times;
     \\        const day = std.fmt.parseInt(i32, day_str, 10) catch return null;
     \\        if (day < 1 or day > solutions.len)
     \\            return null;
@@ -624,7 +589,7 @@ const benchmark_fmt =
     \\
     \\const iterations = std.meta.globalOption("benchmark_iterations", usize) orelse 1;
     \\
-    \\pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime func: anytype, prevns: usize) !usize {{
+    \\pub fn benchmark(inner_allocator: std.mem.Allocator, writer: *Writer, comptime func: anytype, prev_ns: usize) !usize {{
     \\    var counting_allocator = CountingAllocator.init(inner_allocator);
     \\    var allocator = counting_allocator.allocator();
     \\
@@ -650,7 +615,7 @@ const benchmark_fmt =
     \\    }}
     \\
     \\    const avg = sum / iterations;
-    \\    const dif: isize = @as(isize, @intCast(avg)) - @as(isize, @intCast(prevns));
+    \\    const dif: isize = @as(isize, @intCast(avg)) - @as(isize, @intCast(prev_ns));
     \\    const abs = std.math.absInt(dif) catch std.math.maxInt(isize);
     \\
     \\    writeResult(writer, r);
@@ -755,6 +720,56 @@ const benchmark_fmt =
     \\fn hasDeinit(comptime T: type) bool {{
     \\    return std.meta.trait.is(.Struct)(T) and
     \\        std.meta.trait.hasFunctions(T, .{{"deinit"}});
+    \\}}
+    \\
+    \\pub const Result = extern struct {{ part1: usize = 0, part2: usize = 0 }};
+    \\const stride = @sizeOf(Result);
+    \\
+    \\/// reads average ns for day from previous run
+    \\pub fn prevns(day: usize) !Result {{
+    \\    var file = try getbenchfile();
+    \\    defer file.close();
+    \\    try file.seekTo(stride * (day - 1));
+    \\    return try file.reader().readStruct(Result);
+    \\}}
+    \\
+    \\/// writes average ns for day
+    \\pub fn avgns(times: Result, day: usize) !void {{
+    \\    var file = try getbenchfile();
+    \\    defer file.close();
+    \\    try file.seekTo(stride * (day - 1));
+    \\    try file.writer().writeStruct(times);
+    \\}}
+    \\
+    \\/// reads all cached times
+    \\pub fn readall() ![25]Result {{
+    \\    var file = try getbenchfile();
+    \\    defer file.close();
+    \\    var days: [25]Result = undefined;
+    \\    for (0..25) |i| {{
+    \\        try file.seekTo(stride * i);
+    \\        days[i] = try file.reader().readStruct(Result);
+    \\    }}
+    \\    return days;
+    \\}}
+    \\
+    \\/// get benchmarck file, creates it if necessary
+    \\fn getbenchfile() !std.fs.File {{
+    \\    const path = std.meta.globalOption("benchmark_file", []const u8) orelse "bench.dat";
+    \\    var file = try std.fs.cwd().createFile(path, .{{
+    \\        .read = true,
+    \\        .truncate = false,
+    \\    }});
+    \\    try file.seekFromEnd(0);
+    \\    const file_size = try file.getPos();
+    \\    if (file_size < stride * 25) {{
+    \\        try file.seekTo(0);
+    \\        const zero = Result{{}};
+    \\        for (0..25) |_|
+    \\            try file.writer().writeStruct(zero);
+    \\        try file.setEndPos(try file.getPos());
+    \\    }}
+    \\    return file;
     \\}}
     \\
     \\const CountingAllocator = struct {{

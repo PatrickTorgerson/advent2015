@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const Writer = @import("Writer.zig");
+const bench = @import("benchmark.zig");
 
 const help =
     \\
@@ -15,13 +16,16 @@ const help =
     \\
     \\ USEAGE:
     \\   advent2015 `day`
-    \\   where `day` is an integer between 1 and {} inclusive
+    \\       where `day` is an integer between 1 and {} inclusive
+    \\   advent2015 times
+    \\       display cached times for all solutions
     \\
     \\
 ;
 
-pub const benchmark_iterations = 1;
+pub const benchmark_iterations = 100;
 pub const benchmark_file = "benchmark.dat";
+const run_times = 666;
 
 const SlnFn = *const fn (std.mem.Allocator, *Writer) anyerror!void;
 const solutions = [_]SlnFn{
@@ -66,8 +70,21 @@ pub fn main() !void {
         return;
     };
 
-    writer.print("\n==== Running day {} ====\n\n", .{day + 1});
-    try solutions[day](allocator, &writer);
+    if (day == run_times) {
+        const times = try bench.readall();
+        writer.print("\n              part 1       part 2\n", .{});
+        writer.print("-------------------------------------\n", .{});
+        for (&times, 0..) |t, d| {
+            if (t.part1 == 0 and t.part2 == 0) continue;
+            const ms1 = @as(f64, @floatFromInt(t.part1)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
+            const ms2 = @as(f64, @floatFromInt(t.part1)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
+            writer.print(" Day {: >2}: {d: >10.4}ms {d: >10.4}ms\n", .{ d + 1, ms1, ms2 });
+        }
+        writer.print("\n", .{});
+    } else {
+        writer.print("\n==== Running day {} ====\n\n", .{day + 1});
+        try solutions[day](allocator, &writer);
+    }
 }
 
 fn getDay(allocator: std.mem.Allocator) ?usize {
@@ -75,6 +92,8 @@ fn getDay(allocator: std.mem.Allocator) ?usize {
     defer args.deinit();
     _ = args.next(); // ignore executable path
     if (args.next()) |day_str| {
+        if (std.mem.eql(u8, day_str, "times"))
+            return run_times;
         const day = std.fmt.parseInt(i32, day_str, 10) catch return null;
         if (day < 1 or day > solutions.len)
             return null;

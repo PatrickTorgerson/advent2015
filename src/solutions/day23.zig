@@ -11,20 +11,21 @@
 
 const std = @import("std");
 const common = @import("../common.zig");
-const benchmark = @import("../benchmark.zig").benchmark;
+const bench = @import("../benchmark.zig");
+const benchmark = bench.benchmark;
 const Writer = @import("../Writer.zig");
 
 const input = @embedFile("../input/day23.txt");
 
 /// run and benchmark day 23 solutions
 pub fn solve(allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
-    const prevns = try common.prevns(23);
+    const prevns = try bench.prevns(23);
     writer.print("Part 1: ", .{});
     const p1 = try benchmark(allocator, writer, part1, prevns.part1);
     writer.flush();
     writer.print("Part 2: ", .{});
     const p2 = try benchmark(allocator, writer, part2, prevns.part2);
-    try common.avgns(.{ .part1 = p1, .part2 = p2 }, 23);
+    try bench.avgns(.{ .part1 = p1, .part2 = p2 }, 23);
 }
 
 /// PART 1 DESCRIPTION
