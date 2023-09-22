@@ -81,16 +81,13 @@ fn part2(allocator: std.mem.Allocator) !u64 {
 }
 
 /// mdf hashing algorithm https://en.wikipedia.org/wiki/MD5
-fn md5(str: []const u8) [16]u8 { // 64
-    // shift amounts
+fn md5(str: []const u8) [16]u8 {
     const s: [64]u32 = .{
         7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
         5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,
         4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
         6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
     };
-
-    // constants
     const k: [64]u32 = .{
         0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee,
         0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
@@ -109,11 +106,9 @@ fn md5(str: []const u8) [16]u8 { // 64
         0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
         0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
     };
-
     var state: [4]u32 = .{ 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 };
     var chunk: [64]u8 = undefined;
 
-    // each chunk
     var offset: usize = 0;
     var loop = true;
     var write0x80 = true;
@@ -138,15 +133,11 @@ fn md5(str: []const u8) [16]u8 { // 64
             }
         }
 
-        //break chunk into sixteen 32-bit words M[j], 0 ≤ j ≤ 15
-
-        // Initialize hash value for this chunk:
         var A: u32 = state[0];
         var B: u32 = state[1];
         var C: u32 = state[2];
         var D: u32 = state[3];
 
-        // Main loop:
         for (0..64) |i| {
             var F: u32 = 0;
             var g: u32 = 0;
@@ -165,15 +156,13 @@ fn md5(str: []const u8) [16]u8 { // 64
                 g = @intCast((7 * i) % 16);
             }
 
-            // Be wary of the below definitions of a,b,c,d
-            F = F + A + k[i] + std.mem.bytesToValue(u32, chunk[g * 4 ..][0..4]); // M[g] must be a 32-bit block
+            F = F + A + k[i] + std.mem.bytesToValue(u32, chunk[g * 4 ..][0..4]);
             A = D;
             D = C;
             C = B;
             B = B + std.math.rotl(u32, F, s[i]);
         }
 
-        // Add this chunk's hash to result so far:
         state[0] += A;
         state[1] += B;
         state[2] += C;
